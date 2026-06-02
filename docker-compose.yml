@@ -1,0 +1,62 @@
+services:
+  # ---------------------------------------------------------------------------
+  # Postgres — empty database, available for you to use if you want one.
+  # The schema is yours to design. Load `db/fixtures.json` however you like.
+  # (You could also drop this service entirely and keep everything in the graph.)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    container_name: crm-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}
+      POSTGRES_DB: ${POSTGRES_DB:-crm}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-crm}", "-d", "${POSTGRES_DB:-crm}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: crm-falkordb
+    ports:
+      - "${FALKORDB_PORT:-6379}:6379"
+      - "${FALKORDB_UI_PORT:-3000}:3000"
+    volumes:
+      - falkordb_data:/data
+
+  # ---------------------------------------------------------------------------
+  # App — your service. You write the Dockerfile and decide how it runs.
+  # The block below is a *suggestion* — change it freely.
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile  # ← you create this
+    container_name: crm-agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+      falkordb:
+        condition: service_started
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm}@postgres:5432/${POSTGRES_DB:-crm}
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
+      FALKORDB_GRAPH: ${FALKORDB_GRAPH:-crm}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - ./app:/app
+    command: ["python", "-m", "app.main"]
+
+volumes:
+  postgres_data:
+  falkordb_data:

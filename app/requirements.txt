@@ -1,0 +1,12 @@
+# Starter dependencies — extend as you build.
+# psycopg / sqlalchemy / sqlite — pick your storage
+psycopg[binary]==3.2.3
+# graph
+falkordb==1.0.10
+# HTTP API — pick one
+# fastapi>=0.115
+# uvicorn>=0.32
+# LLM — pick one (or use litellm to swap freely)
+# openai>=1.50.0
+# anthropic>=0.39.0
+# litellm>=1.50.0
