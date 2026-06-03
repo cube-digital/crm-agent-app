@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRM · Proactive Sales Agent</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- Auth screen -->
+  <section id="auth" class="screen">
+    <div class="card auth-card">
+      <h1>Proactive Sales Agent</h1>
+      <div class="tabs">
+        <button id="tab-login" class="tab active" onclick="showTab('login')">Log in</button>
+        <button id="tab-signup" class="tab" onclick="showTab('signup')">Sign up</button>
+      </div>
+      <form id="form-login" onsubmit="return doLogin(event)">
+        <input name="email" type="email" placeholder="email" required />
+        <input name="password" type="password" placeholder="password" required />
+        <button type="submit">Log in</button>
+      </form>
+      <form id="form-signup" class="hidden" onsubmit="return doSignup(event)">
+        <input name="company_name" type="text" placeholder="company name (optional)" />
+        <input name="email" type="email" placeholder="email" required />
+        <input name="password" type="password" placeholder="password (min 6)" required />
+        <button type="submit">Sign up &amp; seed CRM</button>
+        <p class="hint">Signup seeds the sample CRM (10 deals, 305 activities) and builds the graph.</p>
+      </form>
+      <p id="auth-error" class="error"></p>
+    </div>
+  </section>
+
+  <!-- Main app -->
+  <section id="app" class="screen hidden">
+    <header>
+      <strong>CRM · Sales Agent</strong>
+      <span id="whoami" class="muted"></span>
+      <span class="spacer"></span>
+      <label class="toggle">
+        Proactive
+        <input id="proactive-toggle" type="checkbox" onchange="toggleProactive()" />
+      </label>
+      <button class="ghost" onclick="logout()">Log out</button>
+    </header>
+
+    <div class="layout">
+      <!-- Inbox -->
+      <aside class="inbox">
+        <div class="inbox-head">
+          <h2>Inbox</h2>
+          <button class="ghost" onclick="loadFeed()">↻</button>
+        </div>
+        <p class="hint">Recommendations surfaced by the proactive agent.</p>
+        <div id="feed"></div>
+      </aside>
+
+      <!-- Deals -->
+      <main class="deals">
+        <h2>Deals</h2>
+        <div id="deal-list"></div>
+      </main>
+
+      <!-- Detail -->
+      <section class="detail">
+        <div id="deal-detail"><p class="muted">Select a deal.</p></div>
+      </section>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

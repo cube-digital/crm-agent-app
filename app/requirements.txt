@@ -1,12 +1,30 @@
-# Starter dependencies — extend as you build.
-# psycopg / sqlalchemy / sqlite — pick your storage
+# --- Storage ---
 psycopg[binary]==3.2.3
-# graph
+SQLAlchemy==2.0.36
+
+# --- Graph ---
 falkordb==1.0.10
-# HTTP API — pick one
-# fastapi>=0.115
-# uvicorn>=0.32
-# LLM — pick one (or use litellm to swap freely)
-# openai>=1.50.0
-# anthropic>=0.39.0
-# litellm>=1.50.0
+
+# --- HTTP API ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic[email]==2.10.4
+email-validator==2.2.0
+pydantic-settings==2.7.0
+
+# --- Auth ---
+PyJWT==2.10.1
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# --- Agent (LangGraph on Anthropic) ---
+langgraph==0.2.60
+langchain-core==0.3.28
+langchain-anthropic==0.3.1
+anthropic==0.42.0
+
+# --- Tests ---
+pytest==8.3.4
+httpx==0.28.1
