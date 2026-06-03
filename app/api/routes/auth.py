@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agent.proactive import run_scan_for_tenant
 from app.api.schemas import (
     LoginRequest,
     MeResponse,
@@ -24,7 +25,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=TokenResponse)
-def signup(body: SignupRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def signup(body: SignupRequest, background: BackgroundTasks,
+           db: Session = Depends(get_db)) -> TokenResponse:
     existing = db.scalar(select(User).where(User.email == body.email))
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
@@ -51,6 +53,10 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)) -> TokenResponse:
         build_graph(company.id)
     except Exception:  # graph is best-effort at signup; /graph/rebuild can retry
         log.exception("Graph build failed for tenant %s (continuing)", company.id)
+
+    # Kick off the first proactive scan in the background so the inbox is
+    # populated within ~30s of landing (the demo path), without blocking signup.
+    background.add_task(run_scan_for_tenant, company.id)
 
     token = create_access_token(user.id, company.id)
     return TokenResponse(access_token=token, company_id=company.id, user_id=user.id)

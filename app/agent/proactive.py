@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy import select
 
@@ -57,7 +58,7 @@ def rank_open_deals(company_id: str) -> list[dict]:
 def _store(company_id: str, deal_id: str, deal_name: str | None, score: float,
            trigger_source: str) -> None:
     """Run the agent for one deal and upsert the result into the inbox."""
-    nba = run_recommendation(company_id, deal_id)
+    nba = run_recommendation(company_id, deal_id, model_name=get_settings().proactive_model)
     db = SessionLocal()
     try:
         # One recommendation per deal: clear the previous one first.
@@ -69,13 +70,15 @@ def _store(company_id: str, deal_id: str, deal_name: str | None, score: float,
         ):
             db.delete(old)
 
-        if not nba.no_action:
-            db.add(Recommendation(
-                company_id=company_id, deal_id=deal_id, deal_name=deal_name,
-                nba=nba.action, rationale=nba.rationale, urgency=nba.urgency,
-                score=score, no_action=False, trigger_source=trigger_source,
-                evidence=[e.model_dump() for e in nba.evidence],
-            ))
+        # Store every evaluated (open) deal — including no_action ones — so the
+        # feed can show low-priority / healthy deals too, not just the urgent few.
+        db.add(Recommendation(
+            company_id=company_id, deal_id=deal_id, deal_name=deal_name,
+            nba=nba.action, rationale=nba.rationale,
+            urgency=("none" if nba.no_action else nba.urgency),
+            score=score, no_action=nba.no_action, trigger_source=trigger_source,
+            evidence=[e.model_dump() for e in nba.evidence],
+        ))
         db.commit()
     finally:
         db.close()
@@ -85,15 +88,33 @@ def _store(company_id: str, deal_id: str, deal_name: str | None, score: float,
 # Triggers
 # --------------------------------------------------------------------------- #
 def run_scan_for_tenant(company_id: str, top_n: int | None = None) -> int:
-    """Rank open deals and evaluate the top N. Returns # of deals evaluated."""
-    top_n = top_n or get_settings().proactive_top_n
-    ranked = rank_open_deals(company_id)[:top_n]
-    log.info("Proactive scan tenant=%s evaluating %d deals", company_id, len(ranked))
-    for d in ranked:
+    """Rank open deals and evaluate the top N (concurrently). Returns # evaluated.
+
+    Fully defensive: a graph/LLM failure is logged, never raised — this runs in a
+    background task and must not break the request that scheduled it.
+    """
+    try:
+        ranked = rank_open_deals(company_id)
+    except Exception:
+        log.exception("Proactive ranking failed for tenant %s", company_id)
+        return 0
+    # Evaluate every open deal so low-priority deals stay visible in the feed.
+    # `top_n` is an optional cap (default: no cap); closed deals are never ranked.
+    if top_n:
+        ranked = ranked[:top_n]
+    log.info("Proactive scan tenant=%s evaluating %d open deals", company_id, len(ranked))
+
+    def _safe(d: dict) -> None:
         try:
             _store(company_id, d["deal_id"], d["deal_name"], d["score"], "scheduled")
         except Exception:
             log.exception("Scan failed for deal %s", d["deal_id"])
+
+    # LLM calls are IO-bound; evaluate the deals concurrently so the inbox fills
+    # in roughly one deal's latency rather than N × latency.
+    if ranked:
+        with ThreadPoolExecutor(max_workers=min(4, len(ranked))) as ex:
+            list(ex.map(_safe, ranked))
     return len(ranked)
 
 
@@ -120,13 +141,17 @@ async def scheduler_loop(stop: asyncio.Event) -> None:
     interval = get_settings().proactive_scan_interval_seconds
     log.info("Proactive scheduler started (interval=%ss)", interval)
     while not stop.is_set():
+        # Wait first, then scan. Avoids a thundering-herd scan of every tenant on
+        # each restart; fresh tenants are covered by the on-signup background scan.
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass
+        if stop.is_set():
+            break
         try:
             for company_id in _tenants_with_proactive():
                 await asyncio.to_thread(run_scan_for_tenant, company_id)
         except Exception:
             log.exception("Scheduler tick failed")
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=interval)
-        except asyncio.TimeoutError:
-            pass
     log.info("Proactive scheduler stopped")

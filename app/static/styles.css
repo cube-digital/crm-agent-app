@@ -107,6 +107,7 @@ h4 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; color: #6b7
 .rec { border-left: 3px solid #2d6cdf; padding-left: 10px; }
 .rec.urg-high { border-left-color: #d9534f; }
 .rec.urg-medium { border-left-color: #e0a800; }
+.rec.urg-none { border-left-color: #c2c8d0; opacity: .8; }  /* low-priority, still visible */
 .rec-deal { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
 .rec-head { margin-bottom: 4px; }
 .rec-nba { font-weight: 600; margin: 2px 0; }

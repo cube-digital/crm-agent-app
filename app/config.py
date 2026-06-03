@@ -35,7 +35,10 @@ class Settings(BaseSettings):
     # --- LLM ---
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    # Interactive recommendation + chat (quality, user is watching).
     agent_model: str = "claude-sonnet-4-6"
+    # Bulk proactive scan (speed — runs across many deals in the background).
+    proactive_model: str = "claude-haiku-4-5-20251001"
 
     # --- Proactive ---
     proactive_scan_interval_seconds: int = 600

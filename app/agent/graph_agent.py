@@ -22,23 +22,20 @@ log = logging.getLogger("crm.agent")
 
 
 @lru_cache
-def get_model() -> ChatAnthropic:
+def get_model(model_name: str | None = None) -> ChatAnthropic:
     s = get_settings()
     if not s.anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set; the agent cannot run.")
     return ChatAnthropic(
-        model=s.agent_model,
+        model=model_name or s.agent_model,
         api_key=s.anthropic_api_key,
         temperature=0,
         max_tokens=1024,
     )
 
 
-# Backwards-compatible alias used internally.
-_model = get_model
-
-
-def run_recommendation(company_id: str, deal_id: str) -> NextBestAction:
+def run_recommendation(company_id: str, deal_id: str,
+                        model_name: str | None = None) -> NextBestAction:
     """Produce a grounded NBA for one deal, scoped to the tenant's graph."""
     overview = queries.deal_overview(company_id, deal_id)
 
@@ -57,7 +54,7 @@ def run_recommendation(company_id: str, deal_id: str) -> NextBestAction:
             rationale=f"Deal is closed ({overview.get('stage_label')}); nothing to do.",
         )
 
-    model = _model()
+    model = get_model(model_name)
     tools = make_tools(company_id, deal_id)
     agent = create_react_agent(model, tools, state_modifier=SYSTEM_PROMPT)
 

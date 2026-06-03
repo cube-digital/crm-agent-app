@@ -227,13 +227,13 @@ def recommend(deal_id: str, principal: Principal = Depends(get_principal),
         Recommendation.company_id == principal.company_id, Recommendation.deal_id == deal_id
     )):
         db.delete(old)
-    if not nba.no_action:
-        db.add(Recommendation(
-            company_id=principal.company_id, deal_id=deal_id, deal_name=deal.deal_name,
-            nba=nba.action, rationale=nba.rationale, urgency=nba.urgency, score=score,
-            no_action=False, trigger_source="manual",
-            evidence=[e.model_dump() for e in nba.evidence],
-        ))
+    db.add(Recommendation(
+        company_id=principal.company_id, deal_id=deal_id, deal_name=deal.deal_name,
+        nba=nba.action, rationale=nba.rationale,
+        urgency=("none" if nba.no_action else nba.urgency), score=score,
+        no_action=nba.no_action, trigger_source="manual",
+        evidence=[e.model_dump() for e in nba.evidence],
+    ))
     db.commit()
 
     return RecommendationOut(

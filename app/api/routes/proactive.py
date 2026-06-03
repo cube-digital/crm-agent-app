@@ -17,12 +17,13 @@ _FALSE = {"false", "0", "off", "no", "disabled"}
 
 @router.get("/feed", response_model=list[RecommendationOut])
 def feed(principal: Principal = Depends(get_principal), db: Session = Depends(get_db)):
-    """Ranked deals needing action now — precomputed by the proactive triggers."""
+    """Ranked open deals — precomputed by the proactive triggers. Deals needing
+    action come first (by score); low-priority / no-action deals stay visible
+    below them so nothing silently disappears."""
     rows = db.scalars(
         select(Recommendation)
-        .where(Recommendation.company_id == principal.company_id,
-               Recommendation.no_action.is_(False))
-        .order_by(Recommendation.score.desc())
+        .where(Recommendation.company_id == principal.company_id)
+        .order_by(Recommendation.no_action.asc(), Recommendation.score.desc())
     )
     return [
         RecommendationOut(

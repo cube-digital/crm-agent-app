@@ -78,6 +78,22 @@ async function enterApp() {
   document.getElementById("proactive-toggle").checked = me.proactive_enabled;
   await loadDeals();
   await refreshRecs();
+  pollForRecs();  // the first proactive scan runs server-side after signup
+}
+
+// After signup the inbox starts empty while the background scan runs; poll a few
+// times so recommendations appear on their own (~30s) without a manual refresh.
+// Stops once recs arrive or the user drills into a specific deal.
+function pollForRecs() {
+  let tries = 0;
+  const iv = setInterval(async () => {
+    tries += 1;
+    if (CURRENT_DEAL || tries > 5) { clearInterval(iv); return; }
+    try {
+      const feed = await api("/proactive/feed");
+      if (feed.length) { clearInterval(iv); if (!CURRENT_DEAL) await refreshRecs(); }
+    } catch (_) { /* ignore transient errors */ }
+  }, 7000);
 }
 
 async function loadDeals() {
