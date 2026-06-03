@@ -206,6 +206,19 @@ class EvidenceItem(BaseModel):
     timestamp: str | None = None
 
 
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
 class RecommendationOut(BaseModel):
     deal_id: str
     deal_name: str | None = None

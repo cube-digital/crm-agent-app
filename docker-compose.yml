@@ -39,6 +39,11 @@ services:
       context: .
       dockerfile: Dockerfile  # ← you create this
     container_name: crm-agent
+    # Read secrets straight from .env into the container, so a stale shell export
+    # of the same var name cannot shadow the file (compose ${VAR} substitution
+    # gives the shell precedence; env_file does not).
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,8 +62,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
       PROACTIVE_SCAN_INTERVAL_SECONDS: ${PROACTIVE_SCAN_INTERVAL_SECONDS:-600}
       PROACTIVE_TOP_N: ${PROACTIVE_TOP_N:-3}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # OPENAI_API_KEY / ANTHROPIC_API_KEY come from env_file (.env) above.
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:

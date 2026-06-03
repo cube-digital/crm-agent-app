@@ -24,7 +24,10 @@ the CRM data. Built for the take-home in `docs/` (read `docs/REQUIREMENTS.md`).
   (creating an activity re-evaluates that deal). Both write to a `recommendations`
   inbox; `GET /proactive/feed` only reads it. Per-tenant off switch.
 - **Static UI**: signup/login → deal list → deal detail with timeline + add-activity
-  → inbox panel with the proactive toggle and a per-deal "Get recommendation".
+  → a right-hand **agent chat**: proactive recommendations arrive as assistant
+  messages (ranked, with evidence), and the rep can ask **grounded follow-up
+  questions** about a deal (quick-reply chips + free text). Proactive on/off toggle
+  in the header.
 
 ## Architecture
 
@@ -117,9 +120,9 @@ docker compose exec app pytest tests -q
 `POST /auth/signup|login`, `GET /auth/me`, `GET /health`,
 CRUD: `/pipelines`, `/buyers`, `/contacts`, `/deals` (+ `/deals/{id}/activities`,
 `/deals/{id}/contacts`), and the agent surface:
-`POST /deals/{id}/recommendation`, `GET /proactive/feed`,
-`POST /proactive/{true|false}`, `POST /graph/rebuild`. Full interactive docs at
-`/docs`.
+`POST /deals/{id}/recommendation`, `POST /deals/{id}/chat` (grounded follow-up
+Q&A), `GET /proactive/feed`, `POST /proactive/{true|false}`, `POST /graph/rebuild`.
+Full interactive docs at `/docs`.
 
 ---
 

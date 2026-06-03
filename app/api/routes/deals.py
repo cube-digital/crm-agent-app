@@ -8,11 +8,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.agent.chat import run_chat
 from app.agent.graph_agent import run_recommendation
 from app.agent.proactive import evaluate_deal_reactive, rank_open_deals, score_deal
 from app.api.schemas import (
     ActivityCreate,
     ActivityOut,
+    ChatRequest,
+    ChatResponse,
     DealContactCreate,
     DealContactOut,
     DealContactRoleUpdate,
@@ -239,3 +242,17 @@ def recommend(deal_id: str, principal: Principal = Depends(get_principal),
         evidence=[EvidenceItem(**e.model_dump()) for e in nba.evidence],
         trigger_source="manual",
     )
+
+
+@router.post("/{deal_id}/chat", response_model=ChatResponse)
+def chat(deal_id: str, body: ChatRequest, principal: Principal = Depends(get_principal),
+         db: Session = Depends(get_db)):
+    """Follow-up Q&A about a deal and its recommendation (graph-grounded)."""
+    get_scoped_or_404(db, Deal, deal_id, principal)
+    try:
+        reply = run_chat(principal.company_id, deal_id,
+                         [m.model_dump() for m in body.messages])
+    except Exception as exc:
+        log.exception("Chat failed for deal %s", deal_id)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Agent chat failed: {exc}")
+    return ChatResponse(reply=reply)

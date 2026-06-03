@@ -22,7 +22,7 @@ log = logging.getLogger("crm.agent")
 
 
 @lru_cache
-def _model() -> ChatAnthropic:
+def get_model() -> ChatAnthropic:
     s = get_settings()
     if not s.anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set; the agent cannot run.")
@@ -32,6 +32,10 @@ def _model() -> ChatAnthropic:
         temperature=0,
         max_tokens=1024,
     )
+
+
+# Backwards-compatible alias used internally.
+_model = get_model
 
 
 def run_recommendation(company_id: str, deal_id: str) -> NextBestAction:

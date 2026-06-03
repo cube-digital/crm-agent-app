@@ -45,16 +45,6 @@
     </header>
 
     <div class="layout">
-      <!-- Inbox -->
-      <aside class="inbox">
-        <div class="inbox-head">
-          <h2>Inbox</h2>
-          <button class="ghost" onclick="loadFeed()">↻</button>
-        </div>
-        <p class="hint">Recommendations surfaced by the proactive agent.</p>
-        <div id="feed"></div>
-      </aside>
-
       <!-- Deals -->
       <main class="deals">
         <h2>Deals</h2>
@@ -65,6 +55,23 @@
       <section class="detail">
         <div id="deal-detail"><p class="muted">Select a deal.</p></div>
       </section>
+
+      <!-- Agent chat -->
+      <aside class="chat">
+        <div class="chat-head">
+          <div>
+            <h2>Sales Agent</h2>
+            <span id="chat-context" class="chat-context">Pick a deal to start</span>
+          </div>
+          <button class="ghost" title="Reload recommendations" onclick="refreshRecs()">↻</button>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div id="chat-quick" class="chat-quick"></div>
+        <form class="chat-input" onsubmit="return sendChat(event)">
+          <input id="chat-text" placeholder="Ask a follow-up…" autocomplete="off" disabled />
+          <button id="chat-send" type="submit" disabled>Send</button>
+        </form>
+      </aside>
     </div>
   </section>
 
