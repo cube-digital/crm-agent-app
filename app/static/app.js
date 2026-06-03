@@ -88,7 +88,7 @@ function pollForRecs() {
   let tries = 0;
   const iv = setInterval(async () => {
     tries += 1;
-    if (CURRENT_DEAL || tries > 5) { clearInterval(iv); return; }
+    if (CURRENT_DEAL || tries > 9) { clearInterval(iv); return; }
     try {
       const feed = await api("/proactive/feed");
       if (feed.length) { clearInterval(iv); if (!CURRENT_DEAL) await refreshRecs(); }

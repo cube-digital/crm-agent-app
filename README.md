@@ -17,8 +17,16 @@ the CRM data. Built for the take-home in `docs/` (read `docs/REQUIREMENTS.md`).
 - **FalkorDB knowledge graph**, one graph key per tenant (`crm:{company_id}`),
   built at signup from Postgres. Modeled for traversal, not as a SQL mirror
   (see `app/graph/SCHEMA.md`).
-- **LangGraph ReAct agent** (Anthropic) with five **typed, graph-backed tools**.
-  It reads the graph only — never Postgres — and must cite activity evidence.
+- **LangGraph ReAct agent** (Anthropic) that **authors its own Cypher**: two tools
+  — `get_graph_schema()` and read-only `run_cypher()` — let it decide what to
+  retrieve instead of fixed queries. It reads the graph only and cites activity
+  evidence. Writes are refused by FalkorDB `RO_QUERY`; queries are structurally
+  scoped to the tenant's graph key.
+- **LLM-enriched graph attributes**: a Haiku pass derives per-deal `summary`,
+  `sentiment`, `key_topics`, `open_asks`, **cached in Postgres** and copied onto the
+  Deal nodes. Postgres stays the attribute store / CRUD surface; the graph is the
+  reasoning/traversal surface (the two DBs, different use cases). `/graph/rebuild`
+  is LLM-free; `/graph/enrich` regenerates the attributes.
 - **Proactivity via two real triggers**: a background scheduler ("morning brief"
   that ranks open deals and runs the agent on the top N) and a reactive trigger
   (creating an activity re-evaluates that deal). Both write to a `recommendations`
@@ -53,7 +61,8 @@ Static UI (app/static) ──fetch──► FastAPI (app/main.py)
 | Tenant seeder (fixtures → Postgres) | `app/seed/seeder.py` |
 | CRUD + agent routes | `app/api/routes/*.py` |
 | Graph build / queries / schema | `app/graph/build.py`, `queries.py`, `SCHEMA.md` |
-| Agent loop / tools / prompts | `app/agent/graph_agent.py`, `tools.py`, `prompts.py` |
+| LLM enrichment (summaries/attrs) | `app/agent/enrich.py` (cached in Postgres `deal_enrichment`) |
+| Agent loop / tools (schema + run_cypher) / prompts | `app/agent/graph_agent.py`, `tools.py`, `prompts.py` |
 | Proactive triggers + ranking | `app/agent/proactive.py` |
 | UI | `app/static/` |
 | Tests | `tests/` |
@@ -121,8 +130,9 @@ docker compose exec app pytest tests -q
 CRUD: `/pipelines`, `/buyers`, `/contacts`, `/deals` (+ `/deals/{id}/activities`,
 `/deals/{id}/contacts`), and the agent surface:
 `POST /deals/{id}/recommendation`, `POST /deals/{id}/chat` (grounded follow-up
-Q&A), `GET /proactive/feed`, `POST /proactive/{true|false}`, `POST /graph/rebuild`.
-Full interactive docs at `/docs`.
+Q&A), `GET /proactive/feed`, `POST /proactive/{true|false}`, `POST /graph/rebuild`
+(LLM-free), `POST /graph/enrich` (regenerate LLM attributes). Full interactive docs
+at `/docs`.
 
 ---
 

@@ -16,7 +16,16 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Activity, ActivityLink, Buyer, Contact, Deal, DealContact, PipelineStage
+from app.db.models import (
+    Activity,
+    ActivityLink,
+    Buyer,
+    Contact,
+    Deal,
+    DealContact,
+    DealEnrichment,
+    PipelineStage,
+)
 from app.db.session import SessionLocal
 from app.graph import schema as S
 from app.graph.client import drop_graph, tenant_graph
@@ -113,12 +122,20 @@ def _build(db: Session, company_id: str) -> dict:
         if act is not None:
             deal_acts.setdefault(link.entity_id, []).append(act)
 
+    # ---- LLM enrichment (cached in Postgres; copied onto Deal nodes) ----- #
+    enrich = {
+        e.deal_id: e for e in db.scalars(
+            select(DealEnrichment).where(DealEnrichment.company_id == company_id)
+        )
+    }
+
     # ---- Deals + WITH_BUYER + IN_STAGE ----------------------------------- #
     deals = list(db.scalars(select(Deal).where(Deal.company_id == company_id)))
     deal_rows = []
     for d in deals:
         da = deal_acts.get(d.id, [])
         ts = [a.timestamp for a in da if a.timestamp]
+        e = enrich.get(d.id)
         deal_rows.append({
             "id": d.id, "name": d.deal_name, "stage_label": d.stage_label,
             "is_closed": bool(d.is_closed), "is_closed_won": bool(d.is_closed_won),
@@ -128,6 +145,11 @@ def _build(db: Session, company_id: str) -> dict:
             "outbound_count": sum(1 for a in da if a.direction == "outbound"),
             "first_activity_at": _iso(min(ts)) if ts else None,
             "last_activity_at": _iso(max(ts)) if ts else None,
+            # Enriched attributes (empty strings if enrichment hasn't run yet).
+            "summary": (e.summary if e else "") or "",
+            "sentiment": (e.sentiment if e else "") or "",
+            "key_topics": "; ".join(e.key_topics) if e and e.key_topics else "",
+            "open_asks": "; ".join(e.open_asks) if e and e.open_asks else "",
         })
     if deal_rows:
         g.query(
@@ -136,7 +158,8 @@ def _build(db: Session, company_id: str) -> dict:
             "is_closed_won:r.is_closed_won, owner:r.owner, buyer_id:r.buyer_id, "
             "activity_count:r.activity_count, inbound_count:r.inbound_count, "
             "outbound_count:r.outbound_count, first_activity_at:r.first_activity_at, "
-            "last_activity_at:r.last_activity_at})",
+            "last_activity_at:r.last_activity_at, summary:r.summary, sentiment:r.sentiment, "
+            "key_topics:r.key_topics, open_asks:r.open_asks})",
             {"rows": deal_rows},
         )
         g.query(

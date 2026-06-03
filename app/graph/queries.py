@@ -1,10 +1,9 @@
-"""Parameterised Cypher read queries against a tenant's graph.
+"""Parameterised Cypher reads used by *internal app logic* (not the agent).
 
-These are the *only* graph reads the agent tools rely on. Each function takes the
-tenant `company_id` (from the JWT) and returns plain Python dicts/lists — no graph
-objects leak upward. "Days since" values are computed against real `now()` from
-the snapshot timestamps, so staleness stays correct even though the graph is
-static.
+The agent now authors its own Cypher via the run_cypher tool. These two helpers
+back the closed-deal short-circuit (deal_overview) and the proactive ranking
+(open_deals_with_signals). "Days since" is computed against real `now()` from the
+snapshot timestamps, so staleness stays correct even though the graph is static.
 """
 from __future__ import annotations
 
@@ -68,72 +67,6 @@ def deal_overview(company_id: str, deal_id: str) -> dict | None:
         "contact_count": r[12] or 0,
         "days_since_last_activity": _days_since(r[9]),
         "is_terminal": (r[1] in S.TERMINAL_STAGES),
-    }
-
-
-def recent_activities(company_id: str, deal_id: str, limit: int = 10) -> list[dict]:
-    cy = (
-        f"MATCH (a:{S.ACTIVITY})-[:{S.ON_DEAL}]->(d:{S.DEAL} {{id:$id}}) "
-        "RETURN a.id, a.type, a.subject, a.direction, a.timestamp, a.snippet "
-        "ORDER BY a.ts DESC LIMIT $limit"
-    )
-    rows = _rows(query(company_id, cy, {"id": deal_id, "limit": int(limit)}))
-    return [
-        {"activity_id": r[0], "type": r[1], "subject": r[2],
-         "direction": r[3], "timestamp": r[4], "snippet": r[5]}
-        for r in rows
-    ]
-
-
-def silent_period(company_id: str, deal_id: str) -> dict:
-    def _last(direction_filter: str) -> str | None:
-        cy = (
-            f"MATCH (a:{S.ACTIVITY})-[:{S.ON_DEAL}]->(d:{S.DEAL} {{id:$id}}) "
-            f"{direction_filter} RETURN a.timestamp ORDER BY a.ts DESC LIMIT 1"
-        )
-        rows = _rows(query(company_id, cy, {"id": deal_id}))
-        return rows[0][0] if rows else None
-
-    last_any = _last("")
-    last_in = _last("WHERE a.direction = 'inbound'")
-    last_out = _last("WHERE a.direction = 'outbound'")
-    return {
-        "last_activity_at": last_any,
-        "last_inbound_at": last_in,
-        "last_outbound_at": last_out,
-        "days_since_last_activity": _days_since(last_any),
-        "days_since_last_inbound": _days_since(last_in),
-        "days_since_last_outbound": _days_since(last_out),
-    }
-
-
-def stakeholder_map(company_id: str, deal_id: str) -> list[dict]:
-    cy = (
-        f"MATCH (c:{S.CONTACT})-[r:{S.INVOLVED_IN}]->(d:{S.DEAL} {{id:$id}}) "
-        "RETURN c.name, c.email, c.position, r.role, r.confidence"
-    )
-    rows = _rows(query(company_id, cy, {"id": deal_id}))
-    return [
-        {"name": r[0], "email": r[1], "position": r[2], "role": r[3], "confidence": r[4]}
-        for r in rows
-    ]
-
-
-def stage_context(company_id: str, deal_id: str) -> dict:
-    cy = (
-        f"MATCH (d:{S.DEAL} {{id:$id}})-[:{S.IN_STAGE}]->(s:{S.STAGE}) "
-        f"OPTIONAL MATCH (s)-[:{S.NEXT}]->(nxt:{S.STAGE}) "
-        "RETURN s.label, s.order_index, nxt.label"
-    )
-    rows = _rows(query(company_id, cy, {"id": deal_id}))
-    if not rows:
-        return {"stage_label": None, "order_index": -1, "next_stage": None, "is_terminal": False}
-    r = rows[0]
-    return {
-        "stage_label": r[0],
-        "order_index": r[1] if r[1] is not None else -1,
-        "next_stage": r[2],
-        "is_terminal": (r[0] in S.TERMINAL_STAGES),
     }
 
 

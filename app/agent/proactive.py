@@ -20,11 +20,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy import select
 
+from app.agent.enrich import enrich_tenant
 from app.agent.graph_agent import run_recommendation
 from app.config import get_settings
 from app.db.models import Company, Recommendation
 from app.db.session import SessionLocal
 from app.graph import queries
+from app.graph.build import build_graph
 
 log = logging.getLogger("crm.proactive")
 
@@ -116,6 +118,18 @@ def run_scan_for_tenant(company_id: str, top_n: int | None = None) -> int:
         with ThreadPoolExecutor(max_workers=min(4, len(ranked))) as ex:
             list(ex.map(_safe, ranked))
     return len(ranked)
+
+
+def bootstrap_tenant(company_id: str) -> None:
+    """First-run pipeline for a new tenant (runs in the background after signup):
+    LLM-enrich every deal -> rebuild the graph so nodes carry the enriched
+    attributes -> run the first proactive scan to fill the inbox."""
+    try:
+        enrich_tenant(company_id)
+        build_graph(company_id)
+    except Exception:
+        log.exception("Bootstrap enrich/rebuild failed for tenant %s", company_id)
+    run_scan_for_tenant(company_id)
 
 
 def evaluate_deal_reactive(company_id: str, deal_id: str, deal_name: str | None = None) -> None:

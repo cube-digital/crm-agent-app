@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent.proactive import run_scan_for_tenant
+from app.agent.proactive import bootstrap_tenant
 from app.api.schemas import (
     LoginRequest,
     MeResponse,
@@ -54,9 +54,12 @@ def signup(body: SignupRequest, background: BackgroundTasks,
     except Exception:  # graph is best-effort at signup; /graph/rebuild can retry
         log.exception("Graph build failed for tenant %s (continuing)", company.id)
 
-    # Kick off the first proactive scan in the background so the inbox is
-    # populated within ~30s of landing (the demo path), without blocking signup.
-    background.add_task(run_scan_for_tenant, company.id)
+    # First-run pipeline in the background (LLM enrichment -> rebuild graph with
+    # enriched attributes -> proactive scan) so the inbox fills shortly after the
+    # user lands, without blocking signup. Disabled in tests.
+    from app.config import get_settings
+    if get_settings().bootstrap_on_signup:
+        background.add_task(bootstrap_tenant, company.id)
 
     token = create_access_token(user.id, company.id)
     return TokenResponse(access_token=token, company_id=company.id, user_id=user.id)

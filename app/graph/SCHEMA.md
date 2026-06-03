@@ -28,7 +28,7 @@ might forget. The `company_id` always comes from the JWT.
 
 | Label      | Key props | Other props |
 |------------|-----------|-------------|
-| `Deal`     | `id`      | `name`, `stage_label`, `is_closed`, `is_closed_won`, `owner`, `activity_count`, `inbound_count`, `outbound_count`, `first_activity_at`, `last_activity_at` |
+| `Deal`     | `id`      | `name`, `stage_label`, `is_closed`, `is_closed_won`, `owner`, `activity_count`, `inbound_count`, `outbound_count`, `first_activity_at`, `last_activity_at`, **`summary`, `sentiment`, `key_topics`, `open_asks`** (LLM-derived — see *Enrichment*) |
 | `Buyer`    | `id`      | `name`, `industry` |
 | `Contact`  | `id`      | `name`, `email`, `position`, `buyer_id` |
 | `Stage`    | `label`   | `order_index` (funnel position; -1 if unknown) |
@@ -61,6 +61,39 @@ graph LR
     D -- IN_STAGE --> S[Stage]
     S -- NEXT --> S2[Stage]
 ```
+
+## Enrichment (LLM-derived node attributes)
+
+Beyond the raw CRM fields, each `Deal` node carries attributes derived by an LLM
+(Haiku) from its activity timeline:
+
+- `summary` — a short digest of where the deal stands and what the buyer wants.
+- `sentiment` — `positive` / `neutral` / `negative` / `at_risk`.
+- `key_topics` — the main topics discussed (joined string).
+- `open_asks` — concrete buyer requests not yet fulfilled (joined string).
+
+These are generated **once** at seed time and **cached in Postgres**
+(`deal_enrichment` table). The graph build *copies* them onto the node, so
+`/graph/rebuild` is LLM-free and deterministic; `/graph/enrich` regenerates them.
+This is the deliberate **two-database split**: Postgres is the attribute store
+(raw + derived) and the transactional CRUD surface; the graph is the
+reasoning/traversal surface the agent queries. The agent uses these attributes for
+a fast read of a deal's state before drilling into individual activities.
+
+## How the agent reads the graph (dynamic Cypher)
+
+The agent is **not** limited to fixed queries. It has two tools:
+
+- `get_graph_schema()` — returns this schema (labels, properties, edges, example
+  queries) so the agent knows the structure.
+- `run_cypher(query)` — runs **read-only** Cypher (FalkorDB `GRAPH.RO_QUERY`)
+  against *this tenant's* graph and returns the rows.
+
+The agent decides what to retrieve. Safety: `RO_QUERY` refuses writes
+server-side, and the query can only ever touch this tenant's graph key (the handle
+is derived from the JWT's `company_id`), so cross-tenant access is structurally
+impossible. Internal app logic (closed-deal short-circuit, proactive ranking)
+still uses a couple of fixed parameterised reads in `queries.py`.
 
 ## Known data limits reflected here
 

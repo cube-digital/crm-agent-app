@@ -8,7 +8,12 @@ fires an LLM call during a short test run.
 """
 from __future__ import annotations
 
+import os
 import uuid
+
+# Disable the LLM bootstrap (enrich -> rebuild -> scan) that signup would otherwise
+# run synchronously under TestClient. Must be set before app/config is imported.
+os.environ.setdefault("BOOTSTRAP_ON_SIGNUP", "false")
 
 import pytest
 from fastapi.testclient import TestClient

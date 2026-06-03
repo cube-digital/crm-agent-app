@@ -40,6 +40,15 @@ def query(company_id: str, cypher: str, params: dict | None = None):
     return tenant_graph(company_id).query(cypher, params or {})
 
 
+def ro_query(company_id: str, cypher: str, params: dict | None = None):
+    """Run a READ-ONLY Cypher query (FalkorDB rejects writes server-side).
+
+    Used for agent-authored queries: structurally scoped to the tenant's graph
+    key, and writes (CREATE/SET/DELETE/MERGE/…) are refused by GRAPH.RO_QUERY.
+    """
+    return tenant_graph(company_id).ro_query(cypher, params or {})
+
+
 def drop_graph(company_id: str) -> None:
     """Delete a tenant's graph if it exists (safe to call when absent)."""
     try:

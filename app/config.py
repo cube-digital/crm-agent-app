@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # --- Proactive ---
     proactive_scan_interval_seconds: int = 600
     proactive_top_n: int = 3
+    # Run the enrich -> rebuild -> scan pipeline in the background on signup.
+    # Disabled in tests to avoid LLM calls.
+    bootstrap_on_signup: bool = True
 
     @property
     def fixtures_path(self) -> Path:

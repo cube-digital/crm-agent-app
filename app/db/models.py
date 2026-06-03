@@ -186,6 +186,27 @@ Index("ix_activity_links_entity", ActivityLink.entity_type, ActivityLink.entity_
 # --------------------------------------------------------------------------- #
 # Proactive inbox
 # --------------------------------------------------------------------------- #
+class DealEnrichment(Base):
+    """LLM-derived attributes for a deal, cached in Postgres.
+
+    Generated once (Haiku) at seed time, then *copied* onto the Deal graph node by
+    the graph build. This keeps `/graph/rebuild` LLM-free + deterministic, and
+    embodies the DB split: Postgres is the attribute store (raw + derived), the
+    graph is the reasoning/traversal surface the agent queries.
+    """
+    __tablename__ = "deal_enrichment"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    company_id: Mapped[str] = mapped_column(String(36), index=True)
+    deal_id: Mapped[str] = mapped_column(String(36), index=True, unique=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sentiment: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    key_topics: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    open_asks: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Recommendation(Base):
     __tablename__ = "recommendations"
 
