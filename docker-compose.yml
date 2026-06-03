@@ -39,6 +39,11 @@ services:
       context: .
       dockerfile: Dockerfile  # ← you create this
     container_name: crm-agent
+    # Read secrets straight from .env into the container, so a stale shell export
+    # of the same var name cannot shadow the file (compose ${VAR} substitution
+    # gives the shell precedence; env_file does not).
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,16 +51,25 @@ services:
         condition: service_started
     environment:
       POSTGRES_URL: postgresql://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm}@postgres:5432/${POSTGRES_DB:-crm}
-      FALKORDB_HOST: falkordb
-      FALKORDB_PORT: 6379
+      # FalkorDB connection is fully env-driven. Defaults point at the local
+      # `falkordb` service; override FALKORDB_HOST/PORT/USERNAME/PASSWORD in .env
+      # to target a remote instance instead.
+      FALKORDB_HOST: ${FALKORDB_HOST:-falkordb}
+      FALKORDB_PORT: ${FALKORDB_PORT:-6379}
+      FALKORDB_USERNAME: ${FALKORDB_USERNAME:-}
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:-}
       FALKORDB_GRAPH: ${FALKORDB_GRAPH:-crm}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
+      PROACTIVE_SCAN_INTERVAL_SECONDS: ${PROACTIVE_SCAN_INTERVAL_SECONDS:-600}
+      PROACTIVE_TOP_N: ${PROACTIVE_TOP_N:-3}
+      # OPENAI_API_KEY / ANTHROPIC_API_KEY come from env_file (.env) above.
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:
-      - ./app:/app
-    command: ["python", "-m", "app.main"]
+      - ./app:/srv/app
+      - ./db:/srv/db
+      - ./tests:/srv/tests
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 volumes:
   postgres_data:

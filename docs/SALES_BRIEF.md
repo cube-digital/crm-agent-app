@@ -15,7 +15,7 @@ That conversation gets recorded as a stream of **activities** — emails sent an
 The **pipeline** is the company's ordered list of stages a deal moves through, e.g.:
 
 ```
-Appointment Scheduled  →  Qualified To Buy  →  Presentation Scheduled
+Appointment Scheduled  →   v    →  Presentation Scheduled
         →  Decision Maker Bought-In  →  POC  →  Contract Sent  →  Closed Won
                                                               ↘  Closed Lost
 ```
@@ -38,7 +38,7 @@ That's what *proactive* means in this context. It isn't "agent runs on a cron." 
 
 A good recommendation has these properties:
 
-1. **It's specific to *this* deal.** Not "follow up regularly." Something like: *"Send a follow-up to maria@acme.com referencing the Aug 14 pricing call; she requested CFO ROI numbers."*
+1. **It's specific to *this* deal.** Not "follow up regularly." Something like: *"Send a follow-up to [maria@acme.com](mailto:maria@acme.com) referencing the Aug 14 pricing call; she requested CFO ROI numbers."*
 2. **It cites evidence.** It points to the specific activities (email subjects, meeting timestamps) that justify the recommendation. The rep needs to trust it instantly.
 3. **It's timely.** A recommendation that arrives a week too late is worse than nothing.
 4. **It's *prioritised*.** Across 30 deals, the agent should say which one matters *right now* — biggest deal × strongest signal × shortest path to revenue.
@@ -46,19 +46,21 @@ A good recommendation has these properties:
 
 ## Vocabulary (use these terms)
 
-| Term | Meaning |
-|---|---|
-| Deal | The opportunity being sold. Has a stage, an amount, an owner. |
-| Buyer | The prospect company we're selling to. |
-| Contact | A person inside the buyer. |
-| Champion | A contact actively pushing the deal internally. |
-| Decision maker | The person who signs the contract. Often *not* the champion. |
-| Pipeline | The ordered set of stages a deal can move through. |
-| Stage | Where the deal sits in the pipeline right now. |
-| Activity | An email, call, meeting, note, or task on the timeline. |
-| Stale | A deal where no activity has happened for "too long" given its stage. |
-| Closed Won / Closed Lost | Terminal stages. The deal is over. |
-| Next best action (NBA) | The single most valuable thing the rep should do next. |
+
+| Term                     | Meaning                                                               |
+| ------------------------ | --------------------------------------------------------------------- |
+| Deal                     | The opportunity being sold. Has a stage, an amount, an owner.         |
+| Buyer                    | The prospect company we're selling to.                                |
+| Contact                  | A person inside the buyer.                                            |
+| Champion                 | A contact actively pushing the deal internally.                       |
+| Decision maker           | The person who signs the contract. Often *not* the champion.          |
+| Pipeline                 | The ordered set of stages a deal can move through.                    |
+| Stage                    | Where the deal sits in the pipeline right now.                        |
+| Activity                 | An email, call, meeting, note, or task on the timeline.               |
+| Stale                    | A deal where no activity has happened for "too long" given its stage. |
+| Closed Won / Closed Lost | Terminal stages. The deal is over.                                    |
+| Next best action (NBA)   | The single most valuable thing the rep should do next.                |
+
 
 ## Signals worth thinking about
 
@@ -81,3 +83,4 @@ Not all of these need to be in your first version. Pick the ones you can extract
 - Multi-tenant security, auth, RBAC.
 - Connecting to a real CRM (HubSpot, Salesforce). You have a sample DB.
 - Pretty UIs. A CLI or a JSON endpoint is fine.
+

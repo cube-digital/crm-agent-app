@@ -1,67 +1,179 @@
-# crm-agent-app — practical interview
+# CRM + Proactive Sales Agent
 
-You have one day to build a **proactive sales agent** that suggests the *next best action* for a sales deal, using a **knowledge graph** built on top of a sample CRM dataset.
+A multi-tenant CRM and a **proactive sales agent** that recommends the next best
+action (NBA) for a deal, grounded in a **per-tenant knowledge graph** built from
+the CRM data. Built for the take-home in `docs/` (read `docs/REQUIREMENTS.md`).
 
-## What's in this repo
+> Original task brief preserved in `docs/`. This README is my own writeup.
+
+---
+
+## What I built
+
+- **FastAPI backend** (one service) with JWT auth, full CRUD over the data model,
+  the agent endpoints, and a static UI served from the same app.
+- **Postgres (SQLAlchemy ORM)** as the relational source of truth. Schema is
+  created automatically on startup — no manual migration step.
+- **FalkorDB knowledge graph**, one graph key per tenant (`crm:{company_id}`),
+  built at signup from Postgres. Modeled for traversal, not as a SQL mirror
+  (see `app/graph/SCHEMA.md`).
+- **LangGraph ReAct agent** (Anthropic) that **authors its own Cypher**: two tools
+  — `get_graph_schema()` and read-only `run_cypher()` — let it decide what to
+  retrieve instead of fixed queries. It reads the graph only and cites activity
+  evidence. Writes are refused by FalkorDB `RO_QUERY`; queries are structurally
+  scoped to the tenant's graph key.
+- **LLM-enriched graph attributes**: a Haiku pass derives per-deal `summary`,
+  `sentiment`, `key_topics`, `open_asks`, **cached in Postgres** and copied onto the
+  Deal nodes. Postgres stays the attribute store / CRUD surface; the graph is the
+  reasoning/traversal surface (the two DBs, different use cases). `/graph/rebuild`
+  is LLM-free; `/graph/enrich` regenerates the attributes.
+- **Proactivity via two real triggers**: a background scheduler ("morning brief"
+  that ranks open deals and runs the agent on the top N) and a reactive trigger
+  (creating an activity re-evaluates that deal). Both write to a `recommendations`
+  inbox; `GET /proactive/feed` only reads it. Per-tenant off switch.
+- **Static UI**: signup/login → deal list → deal detail with timeline + add-activity
+  → a right-hand **agent chat**: proactive recommendations arrive as assistant
+  messages (ranked, with evidence), and the rep can ask **grounded follow-up
+  questions** about a deal (quick-reply chips + free text). Proactive on/off toggle
+  in the header.
+
+## Architecture
 
 ```
-.
-├── README.md               ← you are here
-├── docs/
-│   ├── REQUIREMENTS.md     ← the task — read this first
-│   ├── SALES_BRIEF.md      ← sales context for non-sales engineers
-│   ├── DATA_MODEL.md       ← the shape of the sample data
-│   └── EVAL.md             ← how we will evaluate your work
-├── db/
-│   └── fixtures.json       ← the sample CRM data (10 deals, ~300 activities)
-├── docker-compose.yml      ← postgres + falkordb skeleton; the app is yours to add
-├── Makefile                ← convenience targets
-├── .env.example            ← copy to .env and edit
-└── app/                    ← (empty) your code goes here
-    └── requirements.txt    ← starter Python deps — extend as needed
+Static UI (app/static) ──fetch──► FastAPI (app/main.py)
+                                     │
+        ┌────────────────────────────┼────────────────────────────┐
+   SQLAlchemy/Postgres        FalkorDB (per-tenant key)       LangGraph agent
+   source of truth + inbox    crm:{company_id} snapshot       (Anthropic, ReAct)
+                                     ▲                              │
+                                     └──── typed tools read graph ──┘
+   Proactive scheduler (asyncio) + reactive-on-activity ──► recommendations inbox
 ```
 
-> You will notice there is **no SQL schema, no seed SQL file, and no Dockerfile**. That is on purpose. Designing the storage layer (or skipping it), modelling the graph, writing the Dockerfile, and exposing the API are part of the test.
+## Where things live (code map)
 
-## Read the docs in this order
+| Concern | Path |
+|---|---|
+| App entry / route wiring / scheduler lifecycle | `app/main.py` |
+| Config (env) | `app/config.py` |
+| Auth (bcrypt + JWT) | `app/auth/security.py`, `app/auth/deps.py` |
+| ORM models | `app/db/models.py` |
+| Tenant seeder (fixtures → Postgres) | `app/seed/seeder.py` |
+| CRUD + agent routes | `app/api/routes/*.py` |
+| Graph build / queries / schema | `app/graph/build.py`, `queries.py`, `SCHEMA.md` |
+| LLM enrichment (summaries/attrs) | `app/agent/enrich.py` (cached in Postgres `deal_enrichment`) |
+| Agent loop / tools (schema + run_cypher) / prompts | `app/agent/graph_agent.py`, `tools.py`, `prompts.py` |
+| Proactive triggers + ranking | `app/agent/proactive.py` |
+| UI | `app/static/` |
+| Tests | `tests/` |
 
-1. **[docs/SALES_BRIEF.md](docs/SALES_BRIEF.md)** — what a sales deal is, what "next best action" means, what makes the agent useful.
-2. **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** — the task itself: what to build, what to deliver, what's out of scope.
-3. **[docs/DATA_MODEL.md](docs/DATA_MODEL.md)** — the shape of `db/fixtures.json` (entities, relationships, gotchas).
-4. **[docs/EVAL.md](docs/EVAL.md)** — what we grade.
+## How the agent reasons
 
-## Quick start
+The recommendation quality signals are driven by the **activity stream**, because
+the seed data has no usable deal size (all `0.00`) and no usable contact roles
+(all `unknown`/`inferred`). So the agent weighs:
+
+- **Silence** — days since last inbound (buyer→us) / outbound (us→buyer).
+- **Stage age & progression** — funnel position via `Stage` nodes + `NEXT` edges.
+- **Momentum / sentiment & concrete asks** — read from recent activity snippets.
+
+It **stays silent** on closed deals (short-circuited before any LLM call) and on
+healthy deals with no open thread. Every recommendation cites the activity ids /
+subjects / timestamps it used, so the UI can link back.
+
+---
+
+## Run it (5-minute demo)
 
 ```bash
 cp .env.example .env
-# (optional) set OPENAI_API_KEY or ANTHROPIC_API_KEY in .env
+# Fill in: ANTHROPIC_API_KEY, JWT_SECRET (openssl rand -hex 32),
+# and the FalkorDB connection (see "FalkorDB" note below).
 
-# bring up the infra services
-docker compose up -d postgres falkordb
-
-# then add your own `app` service + Dockerfile and:
-docker compose up -d --build app
+make up                # postgres + falkordb + app
+# wait for health:
+curl localhost:8000/health      # {"status":"ok",...}
 ```
 
-The `app` service in `docker-compose.yml` is a *suggestion*. Change it to fit what you build. The Dockerfile is missing on purpose — you write it.
+Then open **http://localhost:8000/** → **Sign up** → you land on a seeded CRM
+(10 deals, 305 activities). Click a deal → **Get recommendation**, or watch the
+**Inbox** populate from the proactive scan. Toggle **Proactive** off to stop it.
 
-## What you should be doing
+API-only demo:
 
-1. Read `db/fixtures.json`. Understand the entities and what's noisy.
-2. Decide how you want to persist data — postgres (provided empty in compose), sqlite, or load straight into the graph. Justify your call in your README.
-3. **Design and build the graph** in FalkorDB. Decide what's a node, what's an edge, what properties matter for reasoning about a deal.
-4. **Build the agent** + the tools it can call. At minimum it queries the graph and reasons about a single deal's state.
-5. **Make it proactive.** This is the core of the task — see `docs/REQUIREMENTS.md`.
-6. **Expose an HTTP API** with the endpoints needed to demo the agent and the proactive feed (see REQUIREMENTS for the minimum set).
-7. **Write the Dockerfile** for your service and wire it into `docker-compose.yml`.
-8. Polish: repo layout, README of your own, what's missing, trade-offs.
+```bash
+TOKEN=$(curl -s localhost:8000/auth/signup -H 'content-type: application/json' \
+  -d '{"email":"demo@x.io","password":"secret123"}' | jq -r .access_token)
 
-You decide the framework, the LLM provider, the agent style. We care about the *reasoning*, not the brand of toolkit.
+curl -s localhost:8000/deals -H "Authorization: Bearer $TOKEN" | jq '.items[].deal_name'
+DEAL=$(curl -s localhost:8000/deals -H "Authorization: Bearer $TOKEN" | jq -r '.items[0].id')
+curl -s -X POST localhost:8000/deals/$DEAL/recommendation -H "Authorization: Bearer $TOKEN" | jq
+curl -s localhost:8000/proactive/feed -H "Authorization: Bearer $TOKEN" | jq
+```
 
-## Constraints
+Inspect the graph directly:
 
-- **Everything runs in Docker** via `docker compose up`. No "works on my machine, run these 8 shell commands first."
-- **Don't modify `db/fixtures.json`.** Treat it as a fixed export you'd never own. If you want derived data, build it yourself.
-- **Time-box.** Don't try to build everything. Pick what you can do well in one day and explain the trade-offs.
+```bash
+make falkor-cli
+> GRAPH.QUERY crm:<company_id> "MATCH (d:Deal)-[:IN_STAGE]->(s:Stage) RETURN d.name, s.label"
+```
 
-Good luck.
+Run the tests (needs the infra up):
+
+```bash
+docker compose exec app pytest tests -q
+```
+
+## Key endpoints
+
+`POST /auth/signup|login`, `GET /auth/me`, `GET /health`,
+CRUD: `/pipelines`, `/buyers`, `/contacts`, `/deals` (+ `/deals/{id}/activities`,
+`/deals/{id}/contacts`), and the agent surface:
+`POST /deals/{id}/recommendation`, `POST /deals/{id}/chat` (grounded follow-up
+Q&A), `GET /proactive/feed`, `POST /proactive/{true|false}`, `POST /graph/rebuild`
+(LLM-free), `POST /graph/enrich` (regenerate LLM attributes). Full interactive docs
+at `/docs`.
+
+---
+
+## Decisions & trade-offs
+
+- **Per-tenant graph key** (`crm:{company_id}`) over a shared+namespaced graph:
+  isolation is structural — a query against tenant A's key physically cannot read
+  tenant B — rather than a `WHERE company_id` we might forget.
+- **Graph is a static snapshot** built at signup / `/graph/rebuild`. CRM writes do
+  **not** sync to the graph (explicit v1 limitation). The reactive trigger fires on
+  new activities, but the agent reasons over the snapshot, so a brand-new activity
+  isn't reflected until a rebuild.
+- **Ranking excludes deal size** (all zero in the data); it scores on
+  silence × funnel progression. Documented in `app/agent/proactive.py`.
+- **Schema via `create_all` on startup**, not Alembic — right call for a one-day
+  build with a fixed model.
+- **18 stage rows kept verbatim** in Postgres (identity in `pipeline_stage_id`,
+  deals reference the duplicates); the graph dedupes to 9 `Stage` nodes ordered by
+  a canonical funnel map.
+
+### FalkorDB target (cold-start caveat)
+
+The FalkorDB connection is **fully env-driven** (`FALKORDB_HOST/PORT/USERNAME/
+PASSWORD`). As configured in `.env` it points at a **remote** instance, which means
+the demo depends on that instance being reachable. To run fully self-contained on
+any machine, blank `FALKORDB_HOST` (and username/password) in `.env` — the app
+then uses the local `falkordb` service in `docker-compose.yml`. Per-tenant graph
+keys keep multiple signups isolated on either target.
+
+## What I cut
+
+- Alembic migrations, refresh tokens, password reset (out of scope per brief).
+- Embeddings/RAG over activity bodies — the graph + structured signals do the work.
+- A polished UI / build pipeline — vanilla HTML+JS, functional over pretty.
+- Outbound content generation — the deliverable is a *recommendation*.
+
+## What I'd do next
+
+- **Graph sync**: incremental updates on CRM writes (or event-sourced rebuild)
+  so reactive recommendations see the new activity without a full rebuild.
+- **Sentiment/topic nodes** + an "open ask" extractor to sharpen the NBA.
+- **Eval harness** for recommendation quality on the three deal archetypes
+  (healthy / silent / closed) and a fallback when the LLM errors or is unreachable.
+- Scale: batch the scheduler, cache graph reads, move the agent to a worker queue.

@@ -1,36 +1,51 @@
-"""Entrypoint for the agent service.
-
-This file is intentionally a stub. Replace it with whatever shape fits your
-implementation. The expected shape (per docs/REQUIREMENTS.md §5) is an HTTP
-API. You can use FastAPI, Flask, Starlette — your call.
-
-Suggested layout (not enforced):
-    app/
-        main.py          # HTTP app + route wiring
-        api/             # request/response models, route handlers
-        db.py            # whatever storage you picked (postgres helpers, etc.)
-        graph/           # building & querying the FalkorDB graph
-            build.py     # data → graph ingestion
-            schema.py    # node/edge types
-            queries.py   # parameterised Cypher used by tools
-        agent/
-            agent.py     # the agent loop
-            tools.py     # tools the agent can call (graph-backed)
-            prompts.py   # system / planning prompts
-            proactive.py # the proactive loop / trigger / off-switch
+"""FastAPI entry point: schema bootstrap, route wiring, static UI, and the
+proactive scheduler lifecycle.
 """
-import os
-import time
+from __future__ import annotations
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from app.agent.proactive import scheduler_loop
+from app.api.routes import auth, buyers, contacts, deals, graph, health, pipelines, proactive
+from app.db.session import init_schema
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s | %(message)s",
+)
+log = logging.getLogger("crm")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
-def main() -> None:
-    print("crm-agent-app — stub. Replace app/main.py with your implementation.")
-    print(f"  POSTGRES_URL  = {os.environ.get('POSTGRES_URL',  '(unset)')}")
-    print(f"  FALKORDB_HOST = {os.environ.get('FALKORDB_HOST', '(unset)')}")
-    # Keep the container alive so `docker compose up` succeeds and you can exec in.
-    while True:
-        time.sleep(3600)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    log.info("Initialising database schema")
+    init_schema()
+    stop = asyncio.Event()
+    task = asyncio.create_task(scheduler_loop(stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        task.cancel()
 
 
-if __name__ == "__main__":
-    main()
+app = FastAPI(title="CRM + Proactive Sales Agent", version="1.0.0", lifespan=lifespan)
+
+for _r in (health, auth, pipelines, buyers, contacts, deals, proactive, graph):
+    app.include_router(_r.router)
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
